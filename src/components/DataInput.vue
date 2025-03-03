@@ -39,13 +39,25 @@ const dataText = ref('');
 const dataRows = ref([]);
 const identityInsertEnabled = ref(false); // IDENTITY INSERT の有効/無効
 
-// データを解析
+// データを解析（セルが空の場合、デフォルト値を適用）
 const parseData = () => {
-  dataRows.value = dataText.value.trim().split("\n").map(row => row.split("\t"));
+  dataRows.value = dataText.value.trim().split("\n").map(row =>
+    row.split("\t").map((cell, index) => {
+      const trimmedCell = cell.trim();
+      if (trimmedCell === '') {
+        const columnType = props.columnTypes[index];
+        if (columnType === 'VARCHAR') return "''"; // 空文字
+        if (columnType === 'INT') return "0"; // 0
+        if (columnType === 'DATETIME') return "GETDATE()"; // SQLのGETDATE()
+      }
+      return trimmedCell;
+    })
+  );
 };
 
-// 日付フォーマットを YYYY-MM-DD HH:MI:SS に変換
+// 日付フォーマットを YYYY-MM-DD HH:MI:SS に変換（GETDATE() は除外）
 const formatDate = (dateString) => {
+  if (dateString === "GETDATE()") return "GETDATE()"; // そのまま返す
   const date = new Date(dateString);
   if (isNaN(date.getTime())) return 'NULL';
 
@@ -66,12 +78,12 @@ const sqlQuery = computed(() => {
   const insertStatements = dataRows.value.map(row => {
     const values = row.map((val, index) => {
       if (props.columnTypes[index] === 'VARCHAR') {
-        return `N'${val.replace(/'/g, "''")}'`;
+        return `N'${val.replace(/'/g, "''")}'`; // 文字列は N'...' で囲む
       }
       if (props.columnTypes[index] === 'DATETIME') {
-        return formatDate(val);
+        return val === "GETDATE()" ? "GETDATE()" : formatDate(val); // GETDATE() はそのまま
       }
-      return val;
+      return val; // INT などはそのまま
     }).join(', ');
 
     return `INSERT INTO ${props.tableName} (${props.columns.join(', ')}) VALUES (${values});`;
